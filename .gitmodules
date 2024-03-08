@@ -1,0 +1,6 @@
+[submodule "extlibs/cpp-parser"]
+	path = extlibs/cpp-parser
+	url = https://github.com/georgegerdin/cpp-parser
+[submodule "extlibs/code-comprehension"]
+	path = extlibs/code-comprehension
+	url = https://github.com/georgegerdin/code-comprehension
