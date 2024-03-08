@@ -2,6 +2,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <cpp/cppcomprehensionengine.hh>
 #include "cpp_parser/parser.hh"
 #include "cpp_parser/traverse_ast.hh"
 #include "local_filedb.h"
@@ -44,6 +45,11 @@ std::string to_lower_case(std::string input) {
 
 std::vector<std::string> convert(std::vector<std::string> content, std::string content_as_string, std::string include_path) {
     std::vector<std::string> converted;
+
+    LocalFileDB filedb;
+    add_file(filedb, "AST.cpp");
+    CodeComprehension::Cpp::CppComprehensionEngine engine(filedb);
+    auto tokens_info = engine.get_tokens_info("AST.cpp");
 
     int line_num = 0;
     std::optional<int> first_include;
