@@ -43,7 +43,42 @@ std::string to_lower_case(std::string input) {
     return input;
 }
 
-std::vector<std::string> convert(std::vector<std::string> content, std::string content_as_string, std::string include_path) {
+std::optional<std::vector<CodeComprehension::TokenInfo>::size_type> find_token_index(
+        int row
+        , int column
+        , std::vector<CodeComprehension::TokenInfo> const& vec_token_info)
+{
+    for(int i = 0; i < vec_token_info.size(); ++i) {
+        auto const& token_info = vec_token_info[i];
+        if(row >= token_info.start_line && row <= token_info.end_line) {
+            if(row == token_info.start_line) {
+                if(column < token_info.start_column)
+                    continue;
+            }
+            if(row == token_info.end_line) {
+                if(column > token_info.end_column)
+                    continue;
+            }
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+std::string to_string(CodeComprehension::TokenInfo const& token_info) {
+    std::string result="[row: ";
+    result+= std::to_string(token_info.start_line);
+    result+= ", col: ";
+    result+= std::to_string(token_info.start_column);
+    result+= "] -> [row: ";
+    result+= std::to_string(token_info.end_line);
+    result+= ", col: ";
+    result+= std::to_string(token_info.end_column);
+    result+= "]";
+    return result;
+}
+
+std::vector<std::string> convert(std::vector<std::string> const& content, std::string content_as_string, std::string include_path) {
     std::vector<std::string> converted;
 
     LocalFileDB filedb;
@@ -60,6 +95,34 @@ std::vector<std::string> convert(std::vector<std::string> content, std::string c
             , include_optional = false
             , include_string_view = false
             , include_string = false;
+
+    auto get_token_string = [&content](CodeComprehension::TokenInfo const& token_info) {
+        std::string result;
+        bool first_line = true;
+
+        for(int i = token_info.start_line; i <= token_info.end_line; ++i) {
+            if(!first_line)  // The first line should not start with a newline
+                result+="\n";
+            else
+                first_line = false;
+
+            int start_col = 0, end_col = content[i].size() - 1;
+            if(i == token_info.start_line) {
+                start_col = token_info.start_column;
+            }
+            if(i == token_info.end_line) {
+                end_col = token_info.end_column;
+            }
+
+            result+= content[i].substr(start_col, end_col - start_col + 1);
+        }
+        return result;
+    };
+
+    for(int i = 0; i < 10; ++i) {
+        dbgln("token {}: {}", i, get_token_string(tokens_info[i]));
+    }
+
 
     for(auto line : content) {
         line_num++;
@@ -167,9 +230,20 @@ std::vector<std::string> convert(std::vector<std::string> content, std::string c
             replace(line, "ptr()", "get()");
         }
         if(contains(line, "to_byte_string()")) {
-            auto position = line.find("to_byte_string");
-            if(line.at(position-1) == '.') {
-
+            auto position = line.find("to_byte_string") + 1;
+            auto tok_index = find_token_index(line_num - 1, position, tokens_info);
+            if(tok_index) {
+                dbgln("find_token_index({}, {}): {}", line_num - 1, position, tok_index.value());
+                auto token_index = tok_index.value();
+                dbgln("{}", to_string(tokens_info[token_index - 1]));
+                dbgln("{}", to_string(tokens_info[token_index]));
+                dbgln("{}", to_string(tokens_info[token_index + 1]));
+                dbgln("token: {}", get_token_string(tokens_info[token_index - 1]));
+                dbgln("token: {}", get_token_string(tokens_info[token_index]));
+                dbgln("token: {}", get_token_string(tokens_info[token_index + 1]));
+            }
+            else {
+                dbgln("find_token_index({}, {}): std::nullopt", line_num - 1, position);
             }
             replace(line, "to_byte_string()", "to_string()");
         }
@@ -248,9 +322,9 @@ int main(int argc, char* argv[]) {
 
     outln("arguments: {}\ninput: {}\noutput: {}", arguments.size(), input_file_path, output_file_path);
 
-    TESTS_ROOT_DIR = read_first_line("project_source_dir.txt") + "/test";
+    TESTS_ROOT_DIR = read_first_line("project_source_dir.txt") + "/test/";
 
-    std::ifstream input_file(input_file_path);
+    std::ifstream input_file(TESTS_ROOT_DIR + input_file_path);
     if(!input_file.is_open()) {
         outln("Unable to open {}", input_file_path);
         return -1;
