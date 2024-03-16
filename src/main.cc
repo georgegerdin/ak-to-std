@@ -80,11 +80,11 @@ std::string to_string(CodeComprehension::TokenInfo const& token_info) {
 
 std::vector<std::string> convert(std::vector<std::string> const& content, std::string content_as_string, std::string include_path) {
     std::vector<std::string> converted;
-
+    auto filename = "AST.cpp";
     LocalFileDB filedb;
-    add_file(filedb, "AST.cpp");
+    add_file(filedb, filename);
     CodeComprehension::Cpp::CppComprehensionEngine engine(filedb);
-    auto tokens_info = engine.get_tokens_info("AST.cpp");
+    auto tokens_info = engine.get_tokens_info(filename);
 
     int line_num = 0;
     std::optional<int> first_include;
@@ -119,10 +119,30 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
         return result;
     };
 
-    for(int i = 0; i < 10; ++i) {
-        dbgln("token {}: {}", i, get_token_string(tokens_info[i]));
-    }
 
+    auto find_parent_token_type = [&](int line, int position, auto const& tokens_info) -> std::optional<std::string> {
+        auto tok_index = find_token_index(line, position, tokens_info);
+        if(tok_index) {
+            auto token_index = tok_index.value();
+            auto prev_token = get_token_string(tokens_info[token_index - 1]);
+            if(prev_token == "." || prev_token == "->") {
+                auto const& prev_prev_token = tokens_info[token_index - 2];
+                auto parent_token = engine.find_declaration_of(filename, {prev_prev_token.start_line, prev_prev_token.start_column});
+                if(parent_token.has_value()) {
+                    auto tok_index_opt = find_token_index(parent_token.value().line, parent_token.value().column, tokens_info);
+                    if(tok_index_opt.has_value()) {
+                        auto tok_index = tok_index_opt.value();
+                        auto s = get_token_string(tokens_info[tok_index]);
+                        return s;
+                    }
+                }
+            }
+        }
+        else {
+            dbgln("find_token_index({}, {}): std::nullopt", line, position);
+        }
+        return std::nullopt;
+    };
 
     for(auto line : content) {
         line_num++;
@@ -162,7 +182,7 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
             continue;
         }
 
-            if(contains(line, "Vector")) {
+        if(contains(line, "Vector")) {
             replace(line, "Vector", "std::vector");
             include_vector = true;
         }
@@ -188,6 +208,10 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
         }
         if(contains(line, "String ")) {
             replace(line, "String ", "std::string ");
+            include_string = true;
+        }
+        if(contains(line, "StringBuilder ")) {
+            replace(line, "StringBuilder ", "std::string ");
             include_string = true;
         }
         if(contains(line, "String(")) {
@@ -224,28 +248,27 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
             replace(line, "(move(", "(std::move(");
         }
         if(contains(line, "append(")) {
-            replace(line, "append(", "push_back(");
+            auto position = line.find("append");
+            auto parent_token_type = find_parent_token_type(line_num - 1, position, tokens_info);
+            if(parent_token_type.has_value() && parent_token_type.value() == "StringBuilder") {
+                // StringBuilders are converted to std::string which have an append function!
+            }
+            else
+                replace(line, "append", "push_back");
         }
         if(contains(line, "ptr()")) {
             replace(line, "ptr()", "get()");
         }
+
         if(contains(line, "to_byte_string()")) {
-            auto position = line.find("to_byte_string") + 1;
-            auto tok_index = find_token_index(line_num - 1, position, tokens_info);
-            if(tok_index) {
-                dbgln("find_token_index({}, {}): {}", line_num - 1, position, tok_index.value());
-                auto token_index = tok_index.value();
-                dbgln("{}", to_string(tokens_info[token_index - 1]));
-                dbgln("{}", to_string(tokens_info[token_index]));
-                dbgln("{}", to_string(tokens_info[token_index + 1]));
-                dbgln("token: {}", get_token_string(tokens_info[token_index - 1]));
-                dbgln("token: {}", get_token_string(tokens_info[token_index]));
-                dbgln("token: {}", get_token_string(tokens_info[token_index + 1]));
+            auto position = line.find("to_byte_string");
+            auto parent_token_type = find_parent_token_type(line_num - 1, position, tokens_info);
+            if(parent_token_type.has_value() && parent_token_type.value() == "StringBuilder") { // StringBuilders are converted to std::string and no to_string is needed
+                replace(line, ".to_byte_string()", "");
+                replace(line, "->to_byte_string()", "");
             }
-            else {
-                dbgln("find_token_index({}, {}): std::nullopt", line_num - 1, position);
-            }
-            replace(line, "to_byte_string()", "to_string()");
+            else
+                replace(line, "to_byte_string()", "to_string()");
         }
         if(contains(line, "is_empty()")) {
             replace(line, "is_empty()", "empty()");
