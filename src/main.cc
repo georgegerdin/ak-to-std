@@ -207,6 +207,27 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
         return result;
     };
 
+    auto position_of_last_matching_paren = [&](int line, int position) -> std::optional<int> {
+        auto tok_index_opt = find_token_index(line, position, tokens_info);
+        if(!tok_index_opt) return std::nullopt;
+
+        auto tok_index = tok_index_opt.value() + 1;
+        int paren_depth = 0;
+        do {
+            if(token_is_left_paren(tok_index)) {
+                paren_depth++;
+            }
+            else if(token_is_right_paren(tok_index)) {
+                paren_depth--;
+            }
+            tok_index++;
+        } while(paren_depth && tok_index < tokens_info.size());
+
+        if(token_is_right_paren(tok_index - 1))
+            return tokens_info[tok_index].start_column;
+        return std::nullopt;
+    };
+
     for(auto line : content) {
         line_num++;
         if(line.starts_with("#include <AK")) {
@@ -260,20 +281,9 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
             replace(line, "ByteString::join", "join_strings");
             include_string = true;
         }
-        if(contains(line, "ByteString::formatted")) {
-            replace(line, "ByteString::formatted", "fmt::format");
-            include_string = true;
-        }
-        if(contains(line, "ByteString")) {
-            replace(line, "ByteString", "std::string");
-            include_string = true;
-        }
+
         if(contains(line, "DeprecatedFlyString")) {
             replace(line, "DeprecatedFlyString", "std::string");
-            include_string = true;
-        }
-        if(contains(line, "String ")) {
-            replace(line, "String ", "std::string ");
             include_string = true;
         }
         if(contains(line, "StringBuilder ")) {
@@ -303,9 +313,6 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
         if(contains(line, "Optional")) {
             replace(line, "Optional", "std::optional");
             include_optional = true;
-        }
-        if(contains(line, "\"sv;")) {
-            replace(line, "\"sv;", "\";");
         }
         if(contains(line, " move(")) {
             replace(line, " move(", " std::move(");
@@ -387,8 +394,31 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
                             , only_whitespace);
                 }
             }
-        }
 
+        }
+        if(contains(line, "appendff")) {
+            auto position = line.find("appendff");
+            auto last_matching_paren = position_of_last_matching_paren(line_num - 1, position);
+            if(last_matching_paren) {
+                line.insert(line.begin() + last_matching_paren.value(), ')');
+                replace(line, "appendff", "append(fmt::format");
+            }
+        }
+        if(contains(line, "empend")) {
+            replace(line, "empend", "emplace_back");
+        }
+        if(contains(line, "ByteString::formatted")) {
+            replace(line, "ByteString::formatted", "fmt::format");
+            include_string = true;
+        }
+        if(contains(line, "ByteString")) {
+            replace(line, "ByteString", "std::string");
+            include_string = true;
+        }
+        if(contains(line, "String ")) {
+            replace(line, "String ", "std::string ");
+            include_string = true;
+        }
         converted.push_back(line);
     }
 
