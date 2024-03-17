@@ -253,6 +253,9 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
             replace(line, "StringView", "std::string_view");
             include_string_view = true;
         }
+        if(contains(line, "ByteString::empty()")) {
+            replace(line, "ByteString::empty()", "\"\"");
+        }
         if(contains(line, "ByteString::join")) {
             replace(line, "ByteString::join", "join_strings");
             include_string = true;
