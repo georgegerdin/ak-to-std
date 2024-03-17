@@ -120,7 +120,22 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
     };
 
 
-    auto find_parent_token_type = [&](int line, int position, auto const& tokens_info) -> std::optional<std::string> {
+    auto object_text = [&](int line, int position) -> std::optional<std::string> {
+        // This is the method call
+        auto tok_index_opt = find_token_index(line, position, tokens_info);
+        if(!tok_index_opt.has_value()) return std::nullopt;
+
+        // This is the . or the -> character
+        auto token_index = tok_index_opt.value();
+        auto prev_token = get_token_string(tokens_info[token_index - 1]);
+        if(prev_token != "." && prev_token != "->") return std::nullopt;
+
+        // This is the object text
+        auto object_text = get_token_string(tokens_info[token_index - 2]);
+        return object_text;
+    };
+
+    auto find_parent_token_type = [&](int line, int position) -> std::optional<std::string> {
         auto tok_index = find_token_index(line, position, tokens_info);
         if(tok_index) {
             auto token_index = tok_index.value();
@@ -142,6 +157,54 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
             dbgln("find_token_index({}, {}): std::nullopt", line, position);
         }
         return std::nullopt;
+    };
+
+    auto token_is_left_paren = [&](int token_index) {
+        if(get_token_string(tokens_info[token_index]) == "(")
+            return true;
+        return false;
+    };
+
+    auto token_is_right_paren = [&](int token_index) {
+        if(get_token_string(tokens_info[token_index]) == ")")
+            return true;
+        return false;
+    };
+
+    auto text_between_matching_parens = [&](int line, int position) -> std::optional<std::string> {
+        auto tok_index_opt = find_token_index(line, position, tokens_info);
+        if(!tok_index_opt) return std::nullopt;
+
+        std::optional<std::string> result;
+        auto tok_index = tok_index_opt.value() + 1;
+
+        // Helper lambda to add current token to result string
+        auto extend_result = [&result, &get_token_string, &tokens_info, &tok_index] () {
+            if(result.has_value()) {
+                result.value().append(get_token_string(tokens_info[tok_index]));
+            }
+            else {
+                result = get_token_string(tokens_info[tok_index]);
+            }
+        };
+
+        int paren_depth = 0;
+        do {
+            if(token_is_left_paren(tok_index)) {
+                if(paren_depth > 0) extend_result();
+                paren_depth++;
+            }
+            else if(token_is_right_paren(tok_index)) {
+                paren_depth--;
+                if(paren_depth > 0) extend_result();
+            }
+            else
+                extend_result();
+
+            tok_index++;
+        } while(paren_depth);
+
+        return result;
     };
 
     for(auto line : content) {
@@ -249,9 +312,15 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
         }
         if(contains(line, "append(")) {
             auto position = line.find("append");
-            auto parent_token_type = find_parent_token_type(line_num - 1, position, tokens_info);
+            auto parent_token_type = find_parent_token_type(line_num - 1, position);
             if(parent_token_type.has_value() && parent_token_type.value() == "StringBuilder") {
                 // StringBuilders are converted to std::string which have an append function!
+                // But this function does not work with chars and push_back needs to be used...
+                auto text_between = text_between_matching_parens(line_num - 1, position);
+                if(text_between) {
+                    if(text_between.value().at(0) == '\'')
+                        replace(line, "append", "push_back");
+                }
             }
             else
                 replace(line, "append", "push_back");
@@ -262,7 +331,7 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
 
         if(contains(line, "to_byte_string()")) {
             auto position = line.find("to_byte_string");
-            auto parent_token_type = find_parent_token_type(line_num - 1, position, tokens_info);
+            auto parent_token_type = find_parent_token_type(line_num - 1, position);
             if(parent_token_type.has_value() && parent_token_type.value() == "StringBuilder") { // StringBuilders are converted to std::string and no to_string is needed
                 replace(line, ".to_byte_string()", "");
                 replace(line, "->to_byte_string()", "");
@@ -277,6 +346,45 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
             replace(line, "verify_cast", "assert_cast");
             include_util = true;
         }
+        if(contains(line, "extend")) {
+            auto position = line.find("extend");
+            auto object = object_text(line_num - 1, position);
+            if(object.has_value()) {
+                auto text_between = text_between_matching_parens(line_num - 1, position);
+
+                if(text_between.has_value()) {
+                    // Construct a reasonable temporary variable name
+                    auto temp_variable_name = text_between.value();
+                    replace(temp_variable_name, "m_", "");
+                    replace(temp_variable_name, ".", "_");
+                    replace(temp_variable_name, "->", "_");
+                    replace(temp_variable_name, "(", "");
+                    replace(temp_variable_name, ")", "");
+
+                    std::string only_whitespace;
+                    auto whitespace = std::copy_if(
+                            line.begin(),
+                            line.end(),
+                            std::back_inserter(only_whitespace),
+                            [](auto c){return std::isspace(c);}
+                            );
+
+                    auto format_parameters = fmt::format("{}.begin(), {}.end()"
+                            , temp_variable_name.c_str()
+                            , temp_variable_name.c_str()
+                    );
+                    replace(line, text_between.value().c_str(), format_parameters.c_str());
+                    replace(line, "extend(", fmt::format("insert({}.end(), ", object.value()).c_str());
+                    line = fmt::format("{}{{\nauto {}    {} = {};\n    {}\n{}}}"
+                            , only_whitespace
+                            , only_whitespace
+                            , temp_variable_name
+                            , text_between.value()
+                            , line
+                            , only_whitespace);
+                }
+            }
+        }
 
         converted.push_back(line);
     }
@@ -290,6 +398,11 @@ std::vector<std::string> convert(std::vector<std::string> const& content, std::s
         }
 
         first_include = std::distance(converted.begin(), pragma_once);
+    }
+
+    // If we are using string view literals we need a using namespace directive
+    if(contains(content_as_string, "\"sv")) {
+        converted.insert(converted.begin() + first_include.value() + 1, "\nusing namespace std::literals;");
     }
 
     if(include_intrusive_ptr) {
