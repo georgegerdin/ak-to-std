@@ -78,9 +78,8 @@ std::string to_string(CodeComprehension::TokenInfo const& token_info) {
     return result;
 }
 
-std::vector<std::string> convert(std::vector<std::string> const& content, std::string content_as_string, std::string include_path) {
+std::vector<std::string> convert(const char* filename, std::vector<std::string> const& content, std::string content_as_string, std::string include_path) {
     std::vector<std::string> converted;
-    auto filename = "AST.cpp";
     LocalFileDB filedb;
     add_file(filedb, filename);
     CodeComprehension::Cpp::CppComprehensionEngine engine(filedb);
@@ -508,7 +507,7 @@ int main(int argc, char* argv[]) {
         content_as_string+=line + "\n";
     }
 
-    auto output_content = convert(contents, content_as_string, "cpp_parser/");
+    auto output_content = convert(input_file_path.c_str(), contents, content_as_string, "cpp_parser/");
 
     std::ofstream output(output_file_path);
     if(output.is_open()) {
