@@ -320,7 +320,7 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             replace(line, "(move(", "(std::move(");
         }
         if(contains(line, "append(")) {
-            auto position = line.find("append");
+            auto position = line.find("append(");
             auto parent_token_type = find_parent_token_type(line_num - 1, position);
             if(parent_token_type.has_value() && parent_token_type.value() == "StringBuilder") {
                 // StringBuilders are converted to std::string which have an append function!
@@ -328,11 +328,11 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
                 auto text_between = text_between_matching_parens(line_num - 1, position);
                 if(text_between) {
                     if(text_between.value().at(0) == '\'')
-                        replace(line, "append", "push_back");
+                        replace(line, "append(", "push_back(");
                 }
             }
             else
-                replace(line, "append", "push_back");
+                replace(line, "append(", "push_back(");
         }
         if(contains(line, "ptr()")) {
             replace(line, "ptr()", "get()");
