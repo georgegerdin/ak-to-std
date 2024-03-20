@@ -481,7 +481,7 @@ int main(int argc, char* argv[]) {
     }
 
     if(arguments.size() < 3) {
-        outln("Usage: ast_to_std <dst-file> <src-file1> [src-file2] ...");
+        outln("Usage: ast_to_std <dst-file> <src-file> ");
         return -1;
     }
 
