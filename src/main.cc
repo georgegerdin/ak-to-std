@@ -245,7 +245,7 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             auto end = line.begin() + end_pos;
 
             std::string filename{beginning, end};
-            converted.push_back(fmt::format("#include \"{}h\"", to_lower_case(filename)));
+            converted.push_back(fmt::format("#include \"{}{}h\"", include_path,to_lower_case(filename)));
             continue;
         }
         if(line.starts_with("#include \"")) {
@@ -261,6 +261,7 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
 
 
             std::string filename{beginning, end};
+            dbgln("{}", filename);
             converted.push_back(fmt::format("#include \"{}{}h\"", include_path, to_lower_case(filename)));
             continue;
         }
@@ -434,7 +435,13 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
 
     // If we are using string view literals we need a using namespace directive
     if(contains(content_as_string, "\"sv")) {
-        converted.insert(converted.begin() + first_include.value() + 1, "\nusing namespace std::literals;");
+        int last_include = 0;
+        for(int i = 0; i < converted.size(); ++i) {
+            if(converted[i].starts_with("#include"))
+                last_include = i;
+        }
+        dbgln("Last include: {}", last_include);
+        converted.insert(converted.begin() + last_include + 1, "\nusing namespace std::literals;");
     }
 
     if(include_intrusive_ptr) {
