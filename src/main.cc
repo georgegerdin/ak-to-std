@@ -426,6 +426,11 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             replace(line, "ByteString", "std::string");
             include_string = true;
         }
+
+        if(contains(line, "type_as_byte_string")) {
+            replace(line, "type_as_byte_string", "type_as_string");
+        }
+
         if(contains(line, "String ")) {
             auto position = line.find("String ");
             auto tok_index = find_token_index(line_num - 1, position, tokens_info);
