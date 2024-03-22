@@ -2,6 +2,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <set>
 #include <cpp/cppcomprehensionengine.hh>
 #include "cpp_parser/parser.hh"
 #include "cpp_parser/traverse_ast.hh"
@@ -94,6 +95,8 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             , include_optional = false
             , include_string_view = false
             , include_string = false;
+
+    std::set<std::string> debug_constants;
 
     auto get_token_string = [&content](CodeComprehension::TokenInfo const& token_info) {
         std::string result;
@@ -266,6 +269,8 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             continue;
         }
 
+        if(contains(line, "CPP_DEBUG")) debug_constants.insert("CPP_DEBUG");
+
         if(contains(line, "Vector")) {
             replace(line, "Vector", "std::vector");
             include_vector = true;
@@ -356,6 +361,9 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             replace(line, "verify_cast", "assert_cast");
             include_util = true;
         }
+        if(contains(line, "ScopeLogger")) {
+            include_util = true;
+        }
         if(contains(line, "extend")) {
             auto position = line.find("extend");
             auto object = object_text(line_num - 1, position);
@@ -433,13 +441,19 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
         first_include = std::distance(converted.begin(), pragma_once);
     }
 
+    int last_include = 0;
+    for(int i = 0; i < converted.size(); ++i) {
+        if(converted[i].starts_with("#include"))
+            last_include = i;
+    }
+
+    // Add any used debug constants
+    for(auto c : debug_constants) {
+        converted.insert(converted.begin() + last_include + 1, fmt::format("constexpr bool {} = false;", c));
+    }
+
     // If we are using string view literals we need a using namespace directive
     if(contains(content_as_string, "\"sv")) {
-        int last_include = 0;
-        for(int i = 0; i < converted.size(); ++i) {
-            if(converted[i].starts_with("#include"))
-                last_include = i;
-        }
         dbgln("Last include: {}", last_include);
         converted.insert(converted.begin() + last_include + 1, "\nusing namespace std::literals;");
     }
