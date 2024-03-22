@@ -121,6 +121,9 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
         return result;
     };
 
+    auto token_string = [&content, &tokens_info, &get_token_string](int token_index) {
+        return get_token_string(tokens_info[token_index]);
+    };
 
     auto object_text = [&](int line, int position) -> std::optional<std::string> {
         // This is the method call
@@ -424,8 +427,14 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             include_string = true;
         }
         if(contains(line, "String ")) {
-            replace(line, "String ", "std::string ");
-            include_string = true;
+            auto position = line.find("String ");
+            auto tok_index = find_token_index(line_num - 1, position, tokens_info);
+            if(tok_index) {
+                if(token_string(tok_index.value()) == "String") {
+                    replace(line, "String ", "std::string ");
+                    include_string = true;
+                }
+            }
         }
         converted.push_back(line);
     }
