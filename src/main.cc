@@ -94,7 +94,8 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
             , include_util = false
             , include_optional = false
             , include_string_view = false
-            , include_string = false;
+            , include_string = false
+            , add_todo_entry = false;
 
     std::set<std::string> debug_constants;
 
@@ -441,6 +442,26 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
                 }
             }
         }
+
+        if(contains(line, "AK_MAKE_NONCOPYABLE")) {
+            auto position = line.find("AK_MAKE_NONCOPYABLE");
+            auto class_name = text_between_matching_parens(line_num - 1, position);
+            if(class_name) {
+                std::string whitespace;
+                std::copy_if(
+                        line.begin(),
+                        line.end(),
+                        std::back_inserter(whitespace),
+                        [](auto c) { return std::isspace(c); }
+                );
+                line = fmt::format("{}{}({} const&) = delete;", whitespace, class_name.value(), class_name.value());
+            }
+        }
+
+        if(line == "#include <LibCodeComprehension/Types.h>") {
+            add_todo_entry = true;
+            continue;
+        }
         converted.push_back(line);
     }
 
@@ -460,6 +481,18 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
         if(converted[i].starts_with("#include"))
             last_include = i;
     }
+
+    const char* todo_entry = "          \n"
+    "namespace CodeComprehension {      \n"
+    "    struct TodoEntry {             \n"
+    "        std::string content;       \n"
+    "        std::string filename;      \n"
+    "        size_t line { 0 };         \n"
+    "        size_t column { 0 };       \n"
+    "    };                             \n"
+    "}                                  \n";
+    if(add_todo_entry)
+        converted.insert(converted.begin() + last_include + 1, todo_entry);
 
     // Add any used debug constants
     for(auto c : debug_constants) {
