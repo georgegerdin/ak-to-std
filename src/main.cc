@@ -487,6 +487,11 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
                 replace(line, full_text.c_str(), new_statement_text.c_str());
             }
         }
+
+        if(contains(line, " forward<")) {
+            replace(line, " forward<", " std::forward<");
+        }
+
         converted.push_back(line);
     }
 
