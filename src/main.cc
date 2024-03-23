@@ -177,6 +177,18 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
         return false;
     };
 
+    auto get_whitespace_between_tokens = [&tokens_info, &get_token_string](int prev_token, int token) {
+        auto prev_token_info = tokens_info[prev_token];
+        auto token_info = tokens_info[token];
+        CodeComprehension::TokenInfo info;
+        info.start_line = prev_token_info.end_line;
+        info.start_column = prev_token_info.end_column + 1;
+        info.end_line = token_info.start_line;
+        info.end_column = (token_info.start_column == 0 ) ? 0 : token_info.start_column - 1;
+
+        return get_token_string(info);
+    };
+
     auto text_between_matching_parens = [&](int line, int position) -> std::optional<std::string> {
         auto tok_index_opt = find_token_index(line, position, tokens_info);
         if(!tok_index_opt) return std::nullopt;
@@ -184,9 +196,11 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
         std::optional<std::string> result;
         auto tok_index = tok_index_opt.value() + 1;
 
+
         // Helper lambda to add current token to result string
-        auto extend_result = [&result, &get_token_string, &tokens_info, &tok_index] () {
+        auto extend_result = [&result, &get_token_string, &tokens_info, &tok_index, &get_whitespace_between_tokens] () {
             if(result.has_value()) {
+                result.value().append(get_whitespace_between_tokens(tok_index - 1, tok_index));
                 result.value().append(get_token_string(tokens_info[tok_index]));
             }
             else {
@@ -461,6 +475,17 @@ std::vector<std::string> convert(const char* filename, std::vector<std::string> 
         if(line == "#include <LibCodeComprehension/Types.h>") {
             add_todo_entry = true;
             continue;
+        }
+
+        if(contains(line, "adopt_ref")) {
+            auto position = line.find("adopt_ref");
+            auto new_statement_text_opt = text_between_matching_parens(line_num - 1, position);
+            if(new_statement_text_opt) {
+                auto new_statement_text = new_statement_text_opt.value();
+                auto full_text = fmt::format("adopt_ref({})", new_statement_text);
+                new_statement_text.erase(0, 1); // Remove the '*' character in adopt_ref(* <--
+                replace(line, full_text.c_str(), new_statement_text.c_str());
+            }
         }
         converted.push_back(line);
     }
